@@ -1,0 +1,559 @@
+{
+  "name": "Video to Transcript to PDF Email Pipeline Webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const content =\n$json.output?.[0]?.content?.[0]?.text ||\n$json.output_text ||\n$json.text ||\n$json.message?.content ||\n$json.choices?.[0]?.message?.content ||\n\"Transcript not found\";\n\nconst formatted = content\n\n// Section headings\n.replace(/^TITLE/gm,\"\")\n.replace(/^OVERVIEW/gm,\"<h2>Overview</h2>\")\n.replace(/^KEY CONCEPTS/gm,\"<h2>Key Concepts</h2>\")\n.replace(/^DETAILED EXPLANATION/gm,\"<h2>Detailed Explanation</h2>\")\n.replace(/^IMPORTANT POINTS/gm,\"<h2>Important Points</h2>\")\n.replace(/^ACTION ITEMS/gm,\"<h2>Action Items</h2>\")\n.replace(/^CONCLUSION/gm,\"<h2>Conclusion</h2>\")\n\n// Bold sections\n.replace(/\\*\\*(.*?)\\*\\*/g,\"<span class='subheading'>$1</span>\")\n\n// Bullets\n.replace(/^- /gm,\"• \")\n\n.replace(/\\n/g,\"<br/>\");\n\n\nconst html = `\n<!DOCTYPE html>\n<html>\n\n<head>\n\n<meta charset=\"UTF-8\"/>\n\n<style>\n\n@page{\nsize:A4;\nmargin:50px;\n\n@bottom-center{\ncontent:\"Page \" counter(page) \" of \" counter(pages);\nfont-size:11px;\ncolor:#777;\n}\n\n}\n\nbody{\nfont-family:Segoe UI,Roboto,Arial;\ncolor:#2d3748;\nline-height:1.7;\n}\n\n.container{\nmax-width:850px;\nmargin:auto;\n}\n\n/* cover */\n\n.cover{\ntext-align:center;\nmargin-top:180px;\npage-break-after:always;\n}\n\n.cover h1{\nfont-size:42px;\nmargin-bottom:20px;\n}\n\n.cover p{\nfont-size:18px;\ncolor:#666;\n}\n\n/* toc */\n\n.toc{\npage-break-after:always;\n}\n\n.toc h2{\nborder-bottom:2px solid #4f46e5;\npadding-bottom:8px;\n}\n\n.toc ul{\nlist-style:none;\npadding-left:0;\n}\n\n.toc li{\npadding:6px 0;\nfont-size:16px;\n}\n\n/* headings */\n\nh1{\nfont-size:32px;\nmargin-bottom:25px;\nborder-bottom:3px solid #4f46e5;\npadding-bottom:10px;\n}\n\nh2{\nfont-size:24px;\nmargin-top:40px;\nmargin-bottom:15px;\ncolor:#4f46e5;\n}\n\n.subheading{\ndisplay:block;\nbackground:#f5f7ff;\nborder-left:4px solid #4f46e5;\npadding:8px 12px;\nmargin-top:18px;\nmargin-bottom:10px;\nfont-weight:600;\n}\n\n/* paragraphs */\n\np{\nmargin:12px 0;\ntext-align:justify;\n}\n\n/* footer */\n\n.footer{\nmargin-top:50px;\nborder-top:1px solid #eee;\npadding-top:15px;\nfont-size:12px;\ncolor:#777;\ntext-align:center;\n}\n\n</style>\n\n</head>\n\n<body>\n\n\n<div class=\"cover\">\n\n<h1>Meeting Documentation</h1>\n\n<p>Structured notes generated from meeting transcript</p>\n\n<p>${new Date().toLocaleDateString()}</p>\n\n</div>\n\n\n<div class=\"toc\">\n\n<h2>Table of Contents</h2>\n\n<ul>\n<li>Overview</li>\n<li>Key Concepts</li>\n<li>Detailed Explanation</li>\n<li>Important Points</li>\n<li>Action Items</li>\n<li>Conclusion</li>\n</ul>\n\n</div>\n\n\n<div class=\"container\">\n\n<h1>Meeting Report</h1>\n\n<p>${formatted}</p>\n\n<div class=\"footer\">\nGenerated automatically from meeting transcript\n</div>\n\n</div>\n\n\n</body>\n</html>\n`;\n\nreturn [\n{\njson:{\nhtml\n}\n}\n];"
+      },
+      "name": "Generate HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        176
+      ],
+      "id": "430f16ba-397f-45ae-b119-34a97af0d804"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.elevenlabs.io/v1/speech-to-text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xi-api-key",
+              "value": "={{ $env.ELEVENLABS_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "audio"
+            },
+            {
+              "name": "model_id",
+              "value": "scribe_v1"
+            },
+            {
+              "name": "diarize",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        176
+      ],
+      "id": "72f87b73-a0c6-41f3-810b-dbc4a939870c",
+      "name": "Audio Transcribe",
+      "retryOnFail": false,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MEDIA_CONVERTER_BASE_URL }}/html-to-pdf",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  html: $json.html\n}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1072,
+        176
+      ],
+      "id": "40ce9ff3-12e0-4131-b521-84d0f81aa3df",
+      "name": "HTML -> PDF"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.EMAIL_RECIPIENT }}",
+        "subject": "Meeting Context",
+        "message": "Hi,\n\nPlease find the session summary attached as a PDF.\n\nThanks",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {}
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1248,
+        176
+      ],
+      "id": "d9558519-0b8d-4a2a-b840-e7ce73b9246a",
+      "name": "Send a message",
+      "webhookId": "29d8a849-a9ce-4229-8ae4-0fa69c701aaa",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Ta6C4bubYXf9yDzo",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MEDIA_CONVERTER_BASE_URL }}/video-to-audio",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "audio"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c97a3eda-37a5-46a9-84ff-83f692fc09c3",
+      "name": "Video -> Audio"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.OPENAI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: \"gpt-5.4\",\n  input: [\n    {\n      role: \"system\",\n      content: \"You convert meeting transcripts into clean professional documentation.\"\n    },\n    {\n      role: \"user\",\n      content: `Convert the transcript into structured session documentation.\n\nRules:\n\n• If transcript is not English, translate it to English first  \n• Remove conversational language like \"the speaker said\"  \n• Do NOT invent information  \n• Keep all important technical details  \n• Write like a **knowledge document**, not a conversation summary  \n\nWriting style:\n\n• Use **clear professional English**  \n• Sentences must be complete  \n• Do NOT break sentences across lines  \n• Write proper paragraphs  \n• Avoid random line breaks  \n\nBullet rules:\n\n• Use \"- \" for bullet points  \n• Each bullet must be a complete sentence  \n\nStructure the output EXACTLY in this format:\n\nTITLE\nWrite a short descriptive title.\n\nOVERVIEW\nWrite one short paragraph explaining what the session covers.\n\nKEY CONCEPTS\nExplain the core ideas discussed.\nUse sub-headings with **bold formatting** when needed.\n\nDETAILED EXPLANATION\nExplain the topic in logical order using paragraphs.\nDo NOT split sentences across lines.\nDo NOT insert bullet points unless necessary.\n\nIMPORTANT POINTS\nWrite key takeaways as bullet points using \"- \".\n\nACTION ITEMS\nList tasks only if they were mentioned in the transcript.\nUse bullet points.\n\nCONCLUSION\nWrite a short closing summary.\n\nTranscript:\n${$json.output?.[0]?.content?.[0]?.text || $json.output_text || $json.cleaned_transcript}`\n    }\n  ],\n  temperature: 0.2\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        640,
+        176
+      ],
+      "id": "4128ed4b-f502-49c7-899c-0041991019df",
+      "name": "Structured Notes (GPT)",
+      "retryOnFail": false,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.OPENAI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: \"gpt-5.4\",\n  input: [\n    {\n      role: \"system\",\n      content: \"You clean raw speech transcripts and convert them into readable paragraphs.\"\n    },\n    {\n      role: \"user\",\n      content:\n`Clean the following transcript.\n\nRules:\n\n• Remove repeated sentences  \n• If not English, translate to English  \n• Remove filler words (um, uh, hmm, you know, etc.)  \n• Remove watermark lines like \"Transcribed by https://otter.ai\"  \n• Fix grammar  \n• Merge broken lines into proper sentences  \n• Convert fragmented speech into clear paragraphs  \n• Ensure sentences are complete and not split across lines  \n• Do NOT summarize  \n• Do NOT remove information  \n• Keep the meaning identical  \n\nFormatting rules:\n\n• Write in full paragraphs  \n• Do NOT insert random line breaks  \n• Only break lines between paragraphs  \n\nTranscript:\n${$json.text}`\n    }\n  ],\n  temperature: 0\n}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        432,
+        176
+      ],
+      "id": "99756eec-ada8-4ec6-a49c-d94dadfa792c",
+      "name": "Clean Transcript (GPT)",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1cfdbaee-4d65-484f-be3f-ad8c5874149c",
+              "leftValue": "={{$binary.data.fileName.toLowerCase().endsWith(\".txt\")}}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        208,
+        432
+      ],
+      "id": "44e8c647-f873-4884-91f9-533742b20a69",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.body.file_id }}",
+          "mode": ""
+        },
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "name": "Download File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -240,
+        176
+      ],
+      "id": "62b3c7a6-3f56-4d12-8e6d-9c73fa752f6e",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "RZY3QLTHQlNDqlzh",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MEDIA_CONVERTER_BASE_URL }}/file-to-text",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        512,
+        432
+      ],
+      "id": "840712a6-ceef-469c-b2d5-658a45ecfc01",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "={{ $env.GOOGLE_DRIVE_WATCH_FOLDER_ID }}",
+            "mode": "id",
+            "cachedResultName": "",
+            "cachedResultUrl": ""
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -320,
+        -240
+      ],
+      "id": "1c7fa44a-08fe-44eb-ad6d-1322d565c3ac",
+      "name": "Search files and folders",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "RZY3QLTHQlNDqlzh",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-file",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -512,
+        176
+      ],
+      "id": "a6336d8d-60c9-4024-9bd7-1731020efc1e",
+      "name": "process_video",
+      "webhookId": "a8331082-a49b-46f9-bf1a-c03a7b3fd8e2"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "list-files",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -528,
+        -240
+      ],
+      "id": "40336f4e-86fb-49e4-b730-a433b553e376",
+      "name": "list_files",
+      "webhookId": "9a51d91c-732a-4cc4-9ed7-a7b35b8f5dd9"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -112,
+        -240
+      ],
+      "id": "de70122e-0193-4365-bc32-6b651a4fcad1",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Audio Transcribe": {
+      "main": [
+        [
+          {
+            "node": "Clean Transcript (GPT)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate HTML": {
+      "main": [
+        [
+          {
+            "node": "HTML -> PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML -> PDF": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Video -> Audio": {
+      "main": [
+        [
+          {
+            "node": "Audio Transcribe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Notes (GPT)": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Transcript (GPT)": {
+      "main": [
+        [
+          {
+            "node": "Structured Notes (GPT)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Video -> Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Clean Transcript (GPT)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "process_video": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "list_files": {
+      "main": [
+        [
+          {
+            "node": "Search files and folders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search files and folders": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "f2574eae-b99f-49c4-9e38-35112771f4a1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c2b4cacd9f2cde062982c693fc3fc2880db16aee28ce5bb3770df3020ace502f"
+  },
+  "id": "2r8YDDwntr5XHIBL",
+  "tags": []
+}
